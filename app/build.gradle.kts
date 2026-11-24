@@ -14,6 +14,7 @@ android {
         versionName = "1.0"
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -25,7 +26,9 @@ android {
 dependencies {
     implementation(platform("io.github.rosemoe:editor-bom:0.24.4"))
     implementation("io.github.rosemoe:editor")
-    implementation("io.github.rosemoe:language-textmate") // Necesario para TextMateLanguage
+    implementation("io.github.rosemoe:language-textmate")
+    
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
