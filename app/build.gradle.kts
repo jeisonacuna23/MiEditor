@@ -23,7 +23,8 @@ android {
 }
 
 dependencies {
-    implementation("io.github.rosemoe:editor:0.23.4")
+    // Dependencia corregida con el groupId oficial y la versión más reciente
+    implementation("io.github.Rosemoe.sora-editor:editor:0.24.4")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
