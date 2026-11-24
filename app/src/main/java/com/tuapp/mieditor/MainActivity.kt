@@ -10,23 +10,19 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import io.github.rosemoe.sora.lang.completion.SimpleCompletionItem
+import io.github.rosemoe.sora.langs.textmate.TextMateColorScheme
 import io.github.rosemoe.sora.langs.textmate.TextMateLanguage
-import io.github.rosemoe.sora.text.Content
+import io.github.rosemoe.sora.langs.textmate.registry.FileProviderRegistry
+import io.github.rosemoe.sora.langs.textmate.registry.GrammarRegistry
+import io.github.rosemoe.sora.langs.textmate.registry.ThemeRegistry
+import io.github.rosemoe.sora.langs.textmate.registry.model.ThemeModel
 import io.github.rosemoe.sora.widget.CodeEditor
-import io.github.rosemoe.sora.widget.EditorSearcher
-import io.github.rosemoe.sora.widget.completion.EditorAutoCompletion
 import org.eclipse.tm4e.core.registry.IThemeSource
-import org.eclipse.tm4e.core.registry.Registry
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 class MainActivity : AppCompatActivity() {
     private lateinit var editor: CodeEditor
     private var currentUri: Uri? = null
-    private lateinit var registry: Registry
 
-    // 1. Lanzador para ABRIR archivos
     private val openFileLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
@@ -36,7 +32,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 2. Lanzador para GUARDAR archivos
     private val saveFileLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
@@ -49,61 +44,77 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Configurar la interfaz principal usando un FrameLayout
+        // 1. Inicializar TextMate (solo una vez por proceso)
+        initTextMate()
+
         val rootLayout = FrameLayout(this)
         editor = CodeEditor(this)
         rootLayout.addView(editor)
-        
-        // Configurar Botón de Abrir
+
+        // Botón Abrir
         val btnOpen = FloatingActionButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_search)
-            contentDescription = "Abrir Archivo"
             setOnClickListener { openFile() }
         }
-        val lpOpen = FrameLayout.LayoutParams(150, 150).apply {
+        rootLayout.addView(btnOpen, FrameLayout.LayoutParams(150, 150).apply {
             gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-            bottomMargin = 50
-            rightMargin = 50
-        }
-        rootLayout.addView(btnOpen, lpOpen)
+            bottomMargin = 50; rightMargin = 50
+        })
 
-        // Configurar Botón de Guardar
+        // Botón Guardar
         val btnSave = FloatingActionButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_save)
-            contentDescription = "Guardar Archivo"
             setOnClickListener { saveFile() }
         }
-        val lpSave = FrameLayout.LayoutParams(150, 150).apply {
+        rootLayout.addView(btnSave, FrameLayout.LayoutParams(150, 150).apply {
             gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-            bottomMargin = 220
-            rightMargin = 50
-        }
-        rootLayout.addView(btnSave, lpSave)
+            bottomMargin = 220; rightMargin = 50
+        })
 
         setContentView(rootLayout)
 
-        // Configuración inicial del editor
         editor.setText("// Toca la lupa para abrir un archivo\n")
         editor.isWordwrap = true
         editor.setTextSize(16f)
         
-        // Inicializar motor TextMate para colores
-        initTextMate()
-        
-        // Inicializar Autocompletado
-        setupAutoCompletion()
+        // Aplicar el esquema de colores de TextMate
+        editor.colorScheme = TextMateColorScheme.create(ThemeRegistry.getInstance())
     }
 
     private fun initTextMate() {
-        registry = Registry()
-        // Aquí podríamos cargar el tema oscuro por defecto si quisiéramos
-        // Por ahora cargamos el registro para que las gramáticas funcionen
+        // Registrar el resolvedor de archivos (assets)
+        FileProviderRegistry.getInstance().addFileProvider(
+            io.github.rosemoe.sora.langs.textmate.registry.provider.AssetsFileResolver(applicationContext.assets)
+        )
+
+        // Cargar y aplicar el tema
+        val themeRegistry = ThemeRegistry.getInstance()
+        val themeAssetsPath = "textmate/quietlight.json"
+        try {
+            val inputStream = FileProviderRegistry.getInstance().tryGetInputStream(themeAssetsPath)
+            themeRegistry.loadTheme(
+                ThemeModel(
+                    IThemeSource.fromInputStream(inputStream, themeAssetsPath, null),
+                    "quietlight"
+                )
+            )
+            themeRegistry.setTheme("quietlight")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Cargar las gramáticas (lenguajes)
+        try {
+            GrammarRegistry.getInstance().loadGrammars("textmate/languages.json")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun openFile() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*" // Permite abrir cualquier tipo de archivo de código
+            type = "*/*"
         }
         openFileLauncher.launch(intent)
     }
@@ -120,16 +131,9 @@ class MainActivity : AppCompatActivity() {
     private fun loadFileContent(uri: Uri) {
         try {
             val inputStream = contentResolver.openInputStream(uri)
-            val reader = BufferedReader(InputStreamReader(inputStream))
-            val content = reader.readText()
-            reader.close()
-            
+            val content = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
             editor.setText(content)
-            
-            // Detectar la extensión para aplicar colores
-            val fileName = getFileName(uri)
-            applySyntaxHighlighting(fileName)
-
+            applySyntaxHighlighting(getFileName(uri))
         } catch (e: Exception) {
             Toast.makeText(this, "Error al abrir: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -137,10 +141,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveFileContent(uri: Uri) {
         try {
-            val outputStream = contentResolver.openOutputStream(uri)
-            outputStream?.write(editor.text.toString().toByteArray())
-            outputStream?.close()
-            Toast.makeText(this, "Archivo guardado exitosamente", Toast.LENGTH_SHORT).show()
+            contentResolver.openOutputStream(uri)?.use { 
+                it.write(editor.text.toString().toByteArray()) 
+            }
+            Toast.makeText(this, "Archivo guardado", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Error al guardar: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -158,50 +162,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applySyntaxHighlighting(fileName: String) {
-        val extension = fileName.substringAfterLast(".", "").lowercase()
-        val scopeName = when (extension) {
+        val ext = fileName.substringAfterLast(".", "").lowercase()
+        val scopeName = when (ext) {
             "kt" -> "source.kotlin"
             "java" -> "source.java"
             "xml" -> "text.xml"
             "html" -> "text.html.basic"
             "js" -> "source.js"
             "css" -> "source.css"
-            else -> return // Si no es un lenguaje conocido, no aplica color
+            else -> return
         }
-
+        
         try {
-            val grammarFile = if (extension == "kt") "kotlin" else if (extension == "js") "javascript" else extension
-            val inputStream = assets.open("languages/$grammarFile.tmLanguage.json")
-            val grammar = registry.loadGrammar(IThemeSource.fromInputStream(inputStream, "$grammarFile.json", null))
-            
-            val language = TextMateLanguage.create(scopeName, grammar)
+            // El segundo parámetro 'true' habilita el autocompletado integrado de TextMate
+            val language = TextMateLanguage.create(scopeName, true)
             editor.setEditorLanguage(language)
         } catch (e: Exception) {
-            // Si falla el color, no pasa nada, el archivo sigue abierto
             e.printStackTrace()
         }
-    }
-
-    private fun setupAutoCompletion() {
-        editor.setAutoCompletionProvider(object : EditorAutoCompletion {
-            override fun requestCompletion(content: Content, position: Int): List<SimpleCompletionItem> {
-                // Autocompletado simple: busca palabras en el texto actual
-                val text = content.toString()
-                val words = text.split(Regex("[^a-zA-Z0-9_]")).filter { it.length > 2 }.distinct()
-                val currentWord = getCurrentWord(content, position)
-                return words.filter { it.startsWith(currentWord) && it != currentWord }
-                    .map { SimpleCompletionItem(it) }
-            }
-        })
-    }
-
-    private fun getCurrentWord(content: Content, position: Int): String {
-        val line = content.getLine(content.getLineForOffset(position))
-        val col = position - content.getLineStartOffset(content.getLineForOffset(position))
-        var start = col
-        while (start > 0 && (line[start - 1].isLetterOrDigit() || line[start - 1] == '_')) {
-            start--
-        }
-        return line.substring(start, col)
     }
 }
