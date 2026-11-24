@@ -23,9 +23,9 @@ android {
 }
 
 dependencies {
-    // Coordenada oficial utilizando BOM recomendado por la documentación
     implementation(platform("io.github.rosemoe:editor-bom:0.24.4"))
     implementation("io.github.rosemoe:editor")
+    implementation("io.github.rosemoe:language-textmate") // Necesario para TextMateLanguage
     
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
